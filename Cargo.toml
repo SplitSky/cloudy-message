@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bytes = "1.12.1"
+clap = "4.6.7"
+crc32fast = "1.5.3"
+criterion = "0.8.2"
+proptest = "1.12.0"
+tempfile = "3.27.0"
+tokio = "1.54.1"
+tracing = "0.1.44"
