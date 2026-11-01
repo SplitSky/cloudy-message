@@ -1,20 +1,21 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufRead, BufReader};
 
-fn read_log(file_path: String) -> String {
-    let mut file_buff = match File::open(file_path) {
-        // handle file errors
-        Ok(file) => file,
-        Err(error) => panic!("Issue opening file {error:?}"),
+fn read_line() -> Vec<String> {
+    let file = "./temp.txt";
+    let input = match File::open(file) {
+        Ok(file_input) => file_input,
+        Err(error) => panic!("Failed to open the file {}", error),
     };
-    let mut file_content = String::new(); // create file buffer
-    match file_buff.read_to_string(&mut file_content) {
-        Ok(content) => content.to_string(),
-        Err(error) => panic!("Issue parsing file content {error:?}"),
+    let buffered = BufReader::new(input);
+    let mut vec = Vec::<String>::new();
+    for line in buffered.lines() {
+        vec.push(line.unwrap().trim().parse().unwrap());
     }
+    vec
 }
 
 fn main() {
-    let some_log = read_log("./temp.txt".to_string());
-    println!("{}", some_log);
+    let lines = read_line();
+    println!("{:?}", lines);
 }
