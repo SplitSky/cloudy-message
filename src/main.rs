@@ -1,53 +1,67 @@
-use std::fs::File;
-use std::os::unix::fs::FileExt;
-use thiserror::Error;
+use serde::{Deserialize, Serialize};
+use serde_json::{self};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 
-const MAX_RECORD: usize = 16 * 1024 * 1024;
-
-#[derive(Debug, Error)]
-pub enum LogError {
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("corrupt record at byte {pos}")]
-    Corrupt { pos: u64 },
-
-    #[error("offset {0} is out of range")]
-    OffsetOutOfRange(u64),
+// structs
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    id: u64,
+    content: String,
 }
 
-pub fn read_record(file: &File, pos: u64) -> Result<Vec<u8>, LogError> {
-    let mut header = [0u8; 8];
-    file.read_exact_at(&mut header, pos)?;
-
-    let len = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
-    let crc = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-
-    if len > MAX_RECORD {
-        return Err(LogError::Corrupt { pos });
-    }
-
-    let mut payload = vec![0u8; len];
-    file.read_exact_at(&mut payload, pos + 8)?;
-
-    if crc32fast::hash(&payload) != crc {
-        return Err(LogError::Corrupt { pos });
-    }
-    Ok(payload)
+struct MessageQueue {
+    file_path: String,
+    offset_file_path: String,
 }
 
-fn main() {
-    let pos = 10;
-    let content = match read_record(&file, pos) {
-        Ok(rec) => pos += 8 + rec.len() as u64,
-        Err(LogError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-            file.set_len(pos)?; // torn tail: truncate and stop
-            break;
+impl MessageQueue {
+    fn new(file_path: &str, offset_file_path: &str) -> Self {
+        // constructor
+        Self {
+            file_path: file_path.to_string(),
+            offset_file_path: offset_file_path.to_string(),
         }
-        Err(LogError::Corrupt { .. }) if is_last_segment => {
-            file.set_len(pos)?;
-            break;
-        }
-        Err(e) => return Err(e),
     }
+
+    fn read_message(&self, offset: u64) -> std::io::Result<Message> {
+        let mut file = OpenOptions::new().read(true).open(&self.file_path)?;
+        file.seek(SeekFrom::Start(offset))?; // this reads from offset onwards.
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        let message = serde_json::from_slice(&buffer)?;
+        Ok(message)
+    }
+}
+
+// functions
+fn write_message(file_path: &str, message: &Message) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open(file_path)?;
+    // serialise message
+    let serialised = serde_json::to_vec(message)?;
+
+    file.write_all(&serialised)?;
+    Ok(())
+}
+
+fn main() -> std::io::Result<()> {
+    let file_path = "messages.json";
+    let offset_file_path = "offsets.txt";
+    let message_q = MessageQueue::new(file_path, offset_file_path);
+
+    // write message
+    let message = Message {
+        id: 1,
+        content: "Hello World!".to_string(),
+    };
+    write_message(&file_path, &message)?;
+
+    let offset = 0;
+    let read_message = message_q.read_message(offset)?;
+    println!("message output: {:?}", read_message);
+    Ok(())
 }
